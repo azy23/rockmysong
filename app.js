@@ -15,7 +15,7 @@ const transformButton = document.getElementById("transformButton");
 const statusMessage = document.getElementById("statusMessage");
 
 const MAX_FILE_SIZE = 30 * 1024 * 1024;
-const GRADIO_URL = "https://cb9ad34f9d64e0f886.gradio.live";
+const GRADIO_URL = "https://f698b75311e9b2c8ca.gradio.live";
 const GRADIO_ENDPOINT = "/generate_with_download";
 
 const styles = {
