@@ -15,8 +15,8 @@ const transformButton = document.getElementById("transformButton");
 const statusMessage = document.getElementById("statusMessage");
 
 const MAX_FILE_SIZE = 30 * 1024 * 1024;
-const OUTPUT_SAMPLE_RATE = 44100;
-const MP3_BITRATE = 192;
+const GRADIO_URL = "https://cb9ad34f9d64e0f886.gradio.live";
+const GRADIO_ENDPOINT = "/generate_with_download";
 
 const styles = {
   classic: "Classic Rock",
@@ -27,27 +27,22 @@ const styles = {
   acoustic: "Acoustic Rock"
 };
 
-const styleSettings = {
-  classic: { bass: 1.15, mid: 1.1, treble: 1.12, drive: 1.8, wet: 0.16 },
-  hard:    { bass: 1.3,  mid: 1.2, treble: 1.25, drive: 3.5, wet: 0.28 },
-  pop:     { bass: 1.08, mid: 1.12, treble: 1.18, drive: 1.3, wet: 0.10 },
-  punk:    { bass: 1.2,  mid: 1.3, treble: 1.2,  drive: 3.0, wet: 0.24 },
-  metal:   { bass: 1.35, mid: 0.92, treble: 1.35, drive: 5.0, wet: 0.32 },
-  acoustic:{ bass: 1.05, mid: 1.08, treble: 1.18, drive: 1.05, wet: 0.04 }
-};
-
 let currentFile = null;
 let currentObjectUrl = null;
 let selectedStyle = "classic";
 let isProcessing = false;
-let downloadUrl = null;
-let downloadLink = null;
+let resultAudio = null;
+let resultDownload = null;
+let resultObjectUrl = null;
+let gradioClientPromise = null;
 
 function showStatus(message, type = "") {
   statusMessage.textContent = message;
   statusMessage.className = "status-message";
 
-  if (type) statusMessage.classList.add(type);
+  if (type) {
+    statusMessage.classList.add(type);
+  }
 }
 
 function formatFileSize(bytes) {
@@ -61,20 +56,31 @@ function formatFileSize(bytes) {
 function isSupportedAudio(file) {
   return (
     /\.(mp3|wav)$/i.test(file.name) ||
-    ["audio/mpeg", "audio/wav", "audio/x-wav"].includes(file.type)
+    ["audio/mpeg", "audio/wav", "audio/x-wav", "audio/wave"].includes(file.type)
   );
 }
 
-function clearDownload() {
-  if (downloadUrl) {
-    URL.revokeObjectURL(downloadUrl);
-    downloadUrl = null;
+function removeAIResult() {
+  if (resultAudio) {
+    resultAudio.pause();
+    resultAudio.removeAttribute("src");
+    resultAudio.load();
+    resultAudio.remove();
+    resultAudio = null;
   }
 
-  if (downloadLink) {
-    downloadLink.remove();
-    downloadLink = null;
+  if (resultDownload) {
+    resultDownload.remove();
+    resultDownload = null;
   }
+
+  if (resultObjectUrl) {
+    URL.revokeObjectURL(resultObjectUrl);
+    resultObjectUrl = null;
+  }
+
+  const oldResultHeading = document.getElementById("aiResultHeading");
+  if (oldResultHeading) oldResultHeading.remove();
 }
 
 function clearAudio() {
@@ -89,7 +95,7 @@ function clearAudio() {
     currentObjectUrl = null;
   }
 
-  clearDownload();
+  removeAIResult();
 
   currentFile = null;
   audioFile.value = "";
@@ -121,8 +127,11 @@ function loadAudio(file) {
     return;
   }
 
-  if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
-  clearDownload();
+  if (currentObjectUrl) {
+    URL.revokeObjectURL(currentObjectUrl);
+  }
+
+  removeAIResult();
 
   currentFile = file;
   currentObjectUrl = URL.createObjectURL(file);
@@ -142,220 +151,189 @@ function loadAudio(file) {
   );
 }
 
-function loadMp3Encoder() {
-  if (window.lamejs) return Promise.resolve(window.lamejs);
+async function getGradioClient() {
+  if (!gradioClientPromise) {
+    gradioClientPromise = import(
+      "https://cdn.jsdelivr.net/npm/@gradio/client/dist/index.min.js"
+    ).then(async module => {
+      if (!module.Client || !module.handle_file) {
+        throw new Error("Gradio JavaScript client ကို ဖွင့်မရပါ။");
+      }
 
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector('script[data-rockmysong-encoder]');
+      showStatus("AI Server ကို ချိတ်ဆက်နေပါတယ်။ ခဏစောင့်ပါ…");
 
-    if (existing) {
-      existing.addEventListener("load", () => {
-        window.lamejs ? resolve(window.lamejs) : reject(new Error("MP3 encoder မရရှိပါ။"));
-      }, { once: true });
+      const client = await module.Client.connect(GRADIO_URL);
 
-      existing.addEventListener("error", () => reject(new Error("MP3 encoder ကို ဖွင့်မရပါ။")), { once: true });
-      return;
+      return {
+        client,
+        handle_file: module.handle_file
+      };
+    }).catch(error => {
+      gradioClientPromise = null;
+      throw error;
+    });
+  }
+
+  return gradioClientPromise;
+}
+
+function getRemoteFileUrl(value) {
+  if (!value) return null;
+
+  if (typeof value === "string") {
+    if (/^https?:\/\//i.test(value)) return value;
+    return null;
+  }
+
+  if (typeof value === "object") {
+    if (typeof value.url === "string") {
+      if (/^https?:\/\//i.test(value.url)) {
+        return value.url;
+      }
+
+      if (value.url.startsWith("/")) {
+        return new URL(value.url, GRADIO_URL).href;
+      }
     }
 
-    const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js";
-    script.async = true;
-    script.dataset.rockmysongEncoder = "true";
+    if (typeof value.path === "string") {
+      if (/^https?:\/\//i.test(value.path)) {
+        return value.path;
+      }
 
-    script.onload = () => {
-      if (window.lamejs) resolve(window.lamejs);
-      else reject(new Error("MP3 encoder ကို စတင်အသုံးပြုမရပါ။"));
-    };
+      // A server-local path is not necessarily a public browser URL.
+      // Do not treat paths such as /tmp/audio.wav as downloadable URLs.
+    }
+  }
 
-    script.onerror = () => reject(
-      new Error("MP3 encoder ကို အင်တာနက်မှ ရယူမရပါ။ အင်တာနက်ချိတ်ဆက်မှုကို စစ်ဆေးပါ။")
-    );
+  return null;
+}
 
-    document.head.appendChild(script);
+function createResultHeading() {
+  const heading = document.createElement("h3");
+  heading.id = "aiResultHeading";
+  heading.textContent = "🎸 AI Rock Version";
+
+  Object.assign(heading.style, {
+    marginTop: "24px",
+    marginBottom: "12px",
+    color: "inherit"
   });
+
+  statusMessage.insertAdjacentElement("afterend", heading);
+
+  return heading;
 }
 
-function makeDistortionCurve(amount) {
-  const samples = 44100;
-  const curve = new Float32Array(samples);
-  const k = amount;
+function displayAIResult(audioUrl, downloadUrl, originalName, styleKey) {
+  removeAIResult();
 
-  for (let i = 0; i < samples; i++) {
-    const x = (i * 2) / samples - 1;
-    curve[i] = ((3 + k) * x * 20 * (Math.PI / 180)) /
-      (Math.PI + k * Math.abs(x));
+  if (!audioUrl && !downloadUrl) {
+    throw new Error(
+      "AI က အဖြေပြန်ပေးခဲ့ပေမယ့် အသံဖိုင် URL ကို မဖတ်နိုင်ပါ။ API output ကို စစ်ဆေးဖို့လိုပါတယ်။"
+    );
   }
 
-  return curve;
+  const heading = createResultHeading();
+
+  if (audioUrl) {
+    resultAudio = document.createElement("audio");
+    resultAudio.controls = true;
+    resultAudio.preload = "metadata";
+    resultAudio.src = audioUrl;
+    resultAudio.setAttribute("aria-label", "AI Rock Version audio");
+
+    Object.assign(resultAudio.style, {
+      display: "block",
+      width: "100%",
+      maxWidth: "640px",
+      marginTop: "10px",
+      marginBottom: "12px"
+    });
+
+    heading.insertAdjacentElement("afterend", resultAudio);
+  }
+
+  const linkUrl = downloadUrl || audioUrl;
+
+  if (linkUrl) {
+    resultDownload = document.createElement("a");
+    resultDownload.href = linkUrl;
+    resultDownload.target = "_blank";
+    resultDownload.rel = "noopener noreferrer";
+    resultDownload.textContent = "⬇ AI Rock Version ကို ဒေါင်းလုဒ်လုပ်ရန်";
+    resultDownload.className = "download-result";
+
+    const safeBaseName = originalName
+      .replace(/\.[^.]+$/, "")
+      .replace(/[^\w\-]+/g, "_")
+      .slice(0, 80) || "rock_song";
+
+    resultDownload.download = `${safeBaseName}_${styleKey}_AI_Rock.mp3`;
+
+    Object.assign(resultDownload.style, {
+      display: "inline-block",
+      marginTop: "12px",
+      marginBottom: "16px",
+      padding: "12px 18px",
+      borderRadius: "10px",
+      fontWeight: "700",
+      textDecoration: "none",
+      background: "#ff6b1a",
+      color: "#ffffff"
+    });
+
+    const audioElement = resultAudio || heading;
+    audioElement.insertAdjacentElement("afterend", resultDownload);
+  }
 }
 
-async function processRockAudio(file, styleKey) {
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+async function generateAIRockSong(file, styleKey) {
+  const styleName = styles[styleKey];
 
-  if (!AudioContextClass || !window.OfflineAudioContext && !window.webkitOfflineAudioContext) {
-    throw new Error("ဒီ browser မှာ လိုအပ်တဲ့ audio processing ကို မထောက်ပံ့ပါ။ Chrome သို့မဟုတ် Edge ကို စမ်းသုံးပါ။");
+  if (!styleName) {
+    throw new Error("Rock Style ကို မှန်ကန်စွာ ရွေးချယ်ထားခြင်းမရှိပါ။");
   }
 
-  showStatus("အဆင့် ၁/၃ — သီချင်းအသံကို ဖတ်နေပါတယ်။ ခဏစောင့်ပါ…");
+  showStatus("အဆင့် ၁/၃ — AI Server ကို ချိတ်ဆက်နေပါတယ်။");
 
-  const inputContext = new AudioContextClass();
+  const { client, handle_file } = await getGradioClient();
 
-  let decoded;
-
-  try {
-    const arrayBuffer = await file.arrayBuffer();
-    decoded = await inputContext.decodeAudioData(arrayBuffer);
-  } finally {
-    await inputContext.close();
-  }
-
-  const OfflineClass = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  const frameCount = Math.ceil(decoded.duration * OUTPUT_SAMPLE_RATE);
-
-  if (!frameCount || !Number.isFinite(frameCount)) {
-    throw new Error("သီချင်းအသံကြာချိန်ကို ဖတ်မရပါ။");
-  }
-
-  // Guard against excessive memory use for very long tracks.
-  if (frameCount > OUTPUT_SAMPLE_RATE * 60 * 12) {
-    throw new Error("သီချင်းကြာချိန် ၁၂ မိနစ်ထက် ကျော်နေပါတယ်။ ပိုတိုတဲ့ဖိုင်ကို စမ်းပါ။");
-  }
-
-  showStatus("အဆင့် ၂/၃ — ရွေးချယ်ထားတဲ့ Rock အသံ effect တွေ ထည့်နေပါတယ်။");
-
-  const offline = new OfflineClass(
-    Math.min(decoded.numberOfChannels, 2),
-    frameCount,
-    OUTPUT_SAMPLE_RATE
+  showStatus(
+    "အဆင့် ၂/၃ — သီချင်းဖိုင်ကို AI Server သို့ ပို့နေပါတယ်။"
   );
 
-  const source = offline.createBufferSource();
-  source.buffer = decoded;
+  const result = await client.predict(GRADIO_ENDPOINT, {
+    audio_file: handle_file(file),
+    style: styleName
+  });
 
-  const bass = offline.createBiquadFilter();
-  bass.type = "lowshelf";
-  bass.frequency.value = 140;
-  bass.gain.value = 3.0;
-
-  const mid = offline.createBiquadFilter();
-  mid.type = "peaking";
-  mid.frequency.value = 1200;
-  mid.Q.value = 0.8;
-  mid.gain.value = 1.5;
-
-  const treble = offline.createBiquadFilter();
-  treble.type = "highshelf";
-  treble.frequency.value = 4200;
-  treble.gain.value = 2.0;
-
-  const settings = styleSettings[styleKey] || styleSettings.classic;
-
-  bass.gain.value = 3 * settings.bass;
-  mid.gain.value = 1.5 * settings.mid;
-  treble.gain.value = 2 * settings.treble;
-
-  const dry = offline.createGain();
-  dry.gain.value = 1 - settings.wet;
-
-  const wet = offline.createGain();
-  wet.gain.value = settings.wet;
-
-  const distortion = offline.createWaveShaper();
-  distortion.curve = makeDistortionCurve(settings.drive);
-  distortion.oversample = "4x";
-
-  const compressor = offline.createDynamicsCompressor();
-  compressor.threshold.value = -16;
-  compressor.knee.value = 18;
-  compressor.ratio.value = 3;
-  compressor.attack.value = 0.008;
-  compressor.release.value = 0.22;
-
-  source.connect(bass);
-  bass.connect(mid);
-  mid.connect(treble);
-
-  treble.connect(dry);
-  dry.connect(compressor);
-
-  treble.connect(distortion);
-  distortion.connect(wet);
-  wet.connect(compressor);
-
-  compressor.connect(offline.destination);
-
-  source.start(0);
-
-  const rendered = await offline.startRendering();
-
-  showStatus("အဆင့် ၃/၃ — MP3 ဖိုင်အဖြစ် ပြောင်းနေပါတယ်။");
-
-  const lamejs = await loadMp3Encoder();
-  const channels = Math.min(rendered.numberOfChannels, 2);
-  const encoder = new lamejs.Mp3Encoder(channels, OUTPUT_SAMPLE_RATE, MP3_BITRATE);
-  const left = rendered.getChannelData(0);
-  const right = channels > 1 ? rendered.getChannelData(1) : left;
-  const chunks = [];
-  const blockSize = 1152;
-
-  function toInt16(floatData, start, end) {
-    const output = new Int16Array(end - start);
-
-    for (let i = start, j = 0; i < end; i++, j++) {
-      const sample = Math.max(-1, Math.min(1, floatData[i]));
-      output[j] = sample < 0 ? sample * 32768 : sample * 32767;
-    }
-
-    return output;
+  if (!result || !Array.isArray(result.data)) {
+    throw new Error("AI Server က မျှော်လင့်ထားတဲ့ output ပုံစံကို မပြန်ပေးပါ။");
   }
 
-  for (let i = 0; i < left.length; i += blockSize) {
-    const end = Math.min(i + blockSize, left.length);
-    const leftBlock = toInt16(left, i, end);
-    const mp3buf = channels > 1
-      ? encoder.encodeBuffer(leftBlock, toInt16(right, i, end))
-      : encoder.encodeBuffer(leftBlock);
+  console.log("RockMySong AI response:", result.data);
 
-    if (mp3buf.length) chunks.push(new Uint8Array(mp3buf));
+  showStatus("အဆင့် ၃/၃ — AI ထုတ်ပေးတဲ့ သီချင်းဖိုင်ကို ပြင်ဆင်နေပါတယ်။");
 
-    if (i % (blockSize * 200) === 0) {
-      const percent = Math.min(100, Math.round((i / left.length) * 100));
-      showStatus(`MP3 ဖိုင်ထုတ်နေပါတယ် — ${percent}%`);
-      await new Promise(resolve => setTimeout(resolve, 0));
-    }
+  const audioOutput = result.data[0];
+  const downloadOutput = result.data[1];
+
+  const audioUrl = getRemoteFileUrl(audioOutput);
+  const downloadUrl = getRemoteFileUrl(downloadOutput) || audioUrl;
+
+  if (!audioUrl && !downloadUrl) {
+    throw new Error(
+      "AI ရလဒ်ကို ရရှိခဲ့ပေမယ့် ဖိုင် URL မပါဝင်ပါ။ Browser Console မှာ RockMySong AI response ကို စစ်ဆေးပါ။"
+    );
   }
 
-  const finalChunk = encoder.flush();
-  if (finalChunk.length) chunks.push(new Uint8Array(finalChunk));
+  displayAIResult(audioUrl, downloadUrl, file.name, styleKey);
 
-  return new Blob(chunks, { type: "audio/mpeg" });
-}
-
-function offerDownload(blob, originalName, styleKey) {
-  clearDownload();
-
-  downloadUrl = URL.createObjectURL(blob);
-  downloadLink = document.createElement("a");
-  downloadLink.href = downloadUrl;
-
-  const safeBaseName = originalName
-    .replace(/\.[^.]+$/, "")
-    .replace(/[^\w\-]+/g, "_")
-    .slice(0, 80) || "rock_song";
-
-  downloadLink.download = `${safeBaseName}_${styleKey}_rock.mp3`;
-  downloadLink.textContent = "⬇ MP3 ဖိုင်ကို ဒေါင်းလုဒ်လုပ်ရန်";
-  downloadLink.className = "download-result";
-  downloadLink.style.display = "inline-block";
-  downloadLink.style.marginTop = "12px";
-  downloadLink.style.padding = "12px 18px";
-  downloadLink.style.borderRadius = "10px";
-  downloadLink.style.fontWeight = "700";
-  downloadLink.style.textDecoration = "none";
-  downloadLink.style.background = "#ff6b1a";
-  downloadLink.style.color = "#ffffff";
-
-  statusMessage.insertAdjacentElement("afterend", downloadLink);
+  showStatus(
+    `${styleName} AI Version ထုတ်လုပ်ပြီးပါပြီ။ အောက်က player မှာ နားထောင်ပြီး ဒေါင်းလုဒ်လုပ်နိုင်ပါတယ်။`,
+    "success"
+  );
 }
 
 audioFile.addEventListener("change", event => {
@@ -368,7 +346,11 @@ styleGrid.addEventListener("click", event => {
   const button = event.target.closest("[data-style]");
   if (!button || isProcessing) return;
 
-  selectedStyle = button.dataset.style;
+  const styleKey = button.dataset.style;
+
+  if (!styles[styleKey]) return;
+
+  selectedStyle = styleKey;
 
   styleGrid.querySelectorAll("[data-style]").forEach(card => {
     const selected = card.dataset.style === selectedStyle;
@@ -377,6 +359,7 @@ styleGrid.addEventListener("click", event => {
   });
 
   selectedStyleLabel.textContent = styles[selectedStyle];
+
   showStatus(`${styles[selectedStyle]} ကို ရွေးချယ်ထားပါတယ်။`);
 });
 
@@ -391,27 +374,33 @@ transformButton.addEventListener("click", async () => {
 
   isProcessing = true;
   transformButton.disabled = true;
-  clearDownload();
+
+  const originalButtonText = transformButton.textContent;
+  transformButton.textContent = "AI လုပ်ဆောင်နေပါတယ်…";
+
+  removeAIResult();
 
   try {
-    const outputBlob = await processRockAudio(currentFile, selectedStyle);
-    offerDownload(outputBlob, currentFile.name, selectedStyle);
-
-    showStatus(
-      `${styles[selectedStyle]} effect ထည့်ပြီး MP3 ထုတ်ပြီးပါပြီ။ အောက်ကခလုတ်ကို နှိပ်ပြီး ဒေါင်းလုဒ်လုပ်ပါ။ သတိပြုရန် — ဒါဟာ audio effect processing ဖြစ်ပြီး AI arrangement အသစ် မဟုတ်သေးပါ။`,
-      "success"
-    );
+    await generateAIRockSong(currentFile, selectedStyle);
   } catch (error) {
-    console.error("RockMySong processing error:", error);
-    showStatus(
-      error instanceof Error
-        ? `လုပ်ဆောင်မှု မအောင်မြင်ပါ — ${error.message}`
-        : "လုပ်ဆောင်မှု မအောင်မြင်ပါ။ အခြားဖိုင်တစ်ခုနဲ့ ထပ်စမ်းပါ။",
-      "error"
-    );
+    console.error("RockMySong AI error:", error);
+
+    let message = error instanceof Error
+      ? error.message
+      : "မသိရှိသော အမှားတစ်ခု ဖြစ်ပွားခဲ့ပါတယ်။";
+
+    if (
+      /fetch|network|failed to connect|timeout|load failed/i.test(message)
+    ) {
+      message +=
+        " Colab runtime အလုပ်လုပ်နေသလား၊ Gradio URL သက်တမ်းရှိသေးသလား စစ်ဆေးပါ။";
+    }
+
+    showStatus(`AI လုပ်ဆောင်မှု မအောင်မြင်ပါ — ${message}`, "error");
   } finally {
     isProcessing = false;
     transformButton.disabled = false;
+    transformButton.textContent = originalButtonText;
   }
 });
 
@@ -427,19 +416,27 @@ uploadZone.addEventListener("dragleave", () => {
 uploadZone.addEventListener("drop", event => {
   event.preventDefault();
   uploadZone.classList.remove("drag-over");
+
   loadAudio(event.dataTransfer.files?.[0]);
 });
 
 window.addEventListener("beforeunload", () => {
   originalAudio.pause();
 
-  if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
-  if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+  if (currentObjectUrl) {
+    URL.revokeObjectURL(currentObjectUrl);
+  }
+
+  if (resultObjectUrl) {
+    URL.revokeObjectURL(resultObjectUrl);
+  }
 });
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("./service-worker.js")
-      .catch(error => console.error("Service worker registration failed:", error));
+      .catch(error => {
+        console.error("Service worker registration failed:", error);
+      });
   });
 }
