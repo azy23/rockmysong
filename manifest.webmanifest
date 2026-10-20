@@ -1,0 +1,21 @@
+
+{
+  "id": "./",
+  "name": "RockMySong - AI Rock Music Maker",
+  "short_name": "RockMySong",
+  "description": "Choose your music and explore rock styles.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#111111",
+  "theme_color": "#151515",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
