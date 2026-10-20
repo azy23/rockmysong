@@ -1,0 +1,161 @@
+
+<!DOCTYPE html>
+<html lang="my">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#151515">
+  <meta name="description" content="Turn your music into a rock-inspired sound with RockMySong.">
+  <title>RockMySong — Make It Rock!</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./">
+      <span class="brand-icon">🎸</span>
+      <span>Rock<span class="orange">MySong</span></span>
+    </a>
+    <span class="beta-label">BETA</span>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="eyebrow">YOUR MUSIC. YOUR STYLE.</div>
+      <h1>Make It <span class="orange">ROCK!</span></h1>
+      <p>သင်နှစ်သက်တဲ့ သီချင်းကို ရွေးချယ်ပါ။<br>
+        Rock ဂီတပုံစံအသစ်ဆီ ခရီးစလိုက်ရအောင်။</p>
+      <div class="hero-tags">
+        <span>🎵 Your song</span>
+        <span>⚡ Your sound</span>
+        <span>🤘 Your rock</span>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <div class="section-heading">
+        <span class="step">01</span>
+        <div>
+          <h2>သီချင်းဖိုင် ရွေးချယ်ပါ</h2>
+          <p>Choose your original track</p>
+        </div>
+      </div>
+
+      <label class="upload-zone" id="uploadZone" for="audioFile">
+        <span class="upload-icon">🎧</span>
+        <strong>သီချင်းဖိုင်ကို ရွေးချယ်ပါ</strong>
+        <span>ဒီနေရာကို နှိပ်ပြီး MP3 သို့မဟုတ် WAV ဖိုင်ရွေးပါ</span>
+        <span class="file-types">MP3 · WAV · အများဆုံး 30 MB</span>
+        <input id="audioFile" type="file" accept=".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav">
+      </label>
+
+      <div id="fileInfo" class="file-info hidden">
+        <div class="track-icon">♫</div>
+        <div class="track-details">
+          <strong id="fileName">သီချင်း</strong>
+          <span id="fileSize"></span>
+        </div>
+        <button id="removeFile" class="icon-button" type="button"
+          aria-label="ဖိုင်ဖယ်ရှားရန်">✕</button>
+      </div>
+
+      <div id="audioPreview" class="audio-preview hidden">
+        <label for="originalAudio">မူရင်းသီချင်း နားထောင်ရန်</label>
+        <audio id="originalAudio" controls preload="metadata"></audio>
+      </div>
+
+      <div class="section-heading style-heading">
+        <span class="step">02</span>
+        <div>
+          <h2>Rock ပုံစံ ရွေးချယ်ပါ</h2>
+          <p>Pick your rock sound</p>
+        </div>
+      </div>
+
+      <div class="style-grid" id="styleGrid">
+        <button class="style-card selected" type="button" data-style="classic"
+          aria-pressed="true">
+          <span class="style-emoji">🎸</span>
+          <strong>Classic Rock</strong>
+          <span>ဂန္ထဝင် Rock</span>
+        </button>
+        <button class="style-card" type="button" data-style="hard"
+          aria-pressed="false">
+          <span class="style-emoji">🔥</span>
+          <strong>Hard Rock</strong>
+          <span>ပြင်းထန်တဲ့ အသံ</span>
+        </button>
+        <button class="style-card" type="button" data-style="pop"
+          aria-pressed="false">
+          <span class="style-emoji">🎤</span>
+          <strong>Pop Rock</strong>
+          <span>ပေါ့ပါးစွဲမက်ဖွယ်</span>
+        </button>
+        <button class="style-card" type="button" data-style="punk"
+          aria-pressed="false">
+          <span class="style-emoji">⚡</span>
+          <strong>Punk Rock</strong>
+          <span>မြန်ဆန်တက်ကြွ</span>
+        </button>
+        <button class="style-card" type="button" data-style="metal"
+          aria-pressed="false">
+          <span class="style-emoji">🤘</span>
+          <strong>Heavy Metal</strong>
+          <span>လေးလံအားကောင်း</span>
+        </button>
+        <button class="style-card" type="button" data-style="acoustic"
+          aria-pressed="false">
+          <span class="style-emoji">🪕</span>
+          <strong>Acoustic Rock</strong>
+          <span>နူးညံ့သဘာဝဆန်</span>
+        </button>
+      </div>
+
+      <div class="selection-summary">
+        <span>သင်ရွေးထားသော Style</span>
+        <strong id="selectedStyle">Classic Rock</strong>
+      </div>
+
+      <button id="transformButton" class="primary-button" type="button">
+        <span>⚡</span> Rock Version ဖန်တီးမယ်
+      </button>
+
+      <div id="statusMessage" class="status-message" role="status" aria-live="polite">
+        သီချင်းဖိုင်တစ်ခုကို ရွေးချယ်ပြီး စတင်လိုက်ပါ။
+      </div>
+
+      <div class="notice">
+        <span>ℹ️</span>
+        <p>လက်ရှိဗားရှင်းမှာ သီချင်း Upload၊ Preview နဲ့ Style ရွေးချယ်မှုကို စမ်းသပ်နိုင်ပါတယ်။ AI သီချင်းပြောင်းလဲမှုစနစ်ကို မချိတ်ဆက်ရသေးပါ။</p>
+      </div>
+    </section>
+
+    <section class="how-it-works">
+      <h2>RockMySong အကြောင်း</h2>
+      <div class="feature-row">
+        <span>🎼</span>
+        <div>
+          <strong>သင့်သီချင်း၊ သင့်ရွေးချယ်မှု</strong>
+          <p>သီချင်းဖိုင်တစ်ခုရွေးပြီး နှစ်သက်တဲ့ Rock Style ကို သတ်မှတ်နိုင်ပါတယ်။</p>
+        </div>
+      </div>
+      <div class="feature-row">
+        <span>🔒</span>
+        <div>
+          <strong>Local Preview</strong>
+          <p>ယခုအဆင့်မှာ မူရင်းသီချင်းကို သင့် Browser ထဲမှာပဲ ဖွင့်နားထောင်ပါတယ်။</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="brand footer-brand">🎸 Rock<span class="orange">MySong</span></div>
+    <p>Made for music lovers. 🤘</p>
+    <p class="copyright">AI transformation will be added in a later version.</p>
+  </footer>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>
